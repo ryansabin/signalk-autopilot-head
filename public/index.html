@@ -18,24 +18,44 @@
 
     <!-- Main display -->
     <main class="display">
-      <div id="banner" class="banner banner--standby">STANDBY</div>
+      <div id="banner" class="banner banner--standby">
+        <span id="bannerText" class="banner__text">STANDBY</span>
+        <span id="engLamp" class="banner__lamp" aria-hidden="true"></span>
+      </div>
 
-      <div class="rose-wrap">
-        <svg id="rose" class="rose" viewBox="0 0 300 300" aria-hidden="true">
-          <g id="roseRing">
-            <circle class="rose__ring" cx="150" cy="150" r="132" />
+      <!-- Linear heading tape (GHC 20 style): red→green off-course gradient, tick scale,
+           fixed center vessel marker (= current heading), moving cyan target bug. -->
+      <div class="tape-wrap">
+        <svg id="tape" class="tape" viewBox="0 0 600 108" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+          <defs>
+            <linearGradient id="tapeGrad" x1="0" x2="1" y1="0" y2="0">
+              <stop offset="0"    stop-color="#f2495c" />
+              <stop offset="0.34" stop-color="#5a1420" />
+              <stop offset="0.5"  stop-color="#0b0f14" />
+              <stop offset="0.66" stop-color="#14421f" />
+              <stop offset="1"    stop-color="#35e08a" />
+            </linearGradient>
+          </defs>
+
+          <rect class="tape__grad" x="0" y="2" width="600" height="20" rx="3" fill="url(#tapeGrad)" />
+          <g id="tapeTicks"></g>
+
+          <!-- moving target bug -->
+          <g id="tapeTarget" style="display:none">
+            <polygon class="tape__bug" points="300,60 289,74 311,74" />
+            <text id="tapeTargetLabel" class="tape__bug-label" x="300" y="94" text-anchor="middle">--</text>
           </g>
-          <!-- target bug -->
-          <g id="targetBug" class="rose__bug" style="display:none">
-            <polygon points="150,18 143,34 157,34" />
+
+          <!-- fixed center marker = current heading -->
+          <g class="tape__boat" transform="translate(300 46)">
+            <path class="tape__hull" d="M0,-22 C9,-11 9,9 0,22 C-9,9 -9,-11 0,-22 Z" />
+            <path class="tape__drop" d="M0,-14 C6,-6 6,2 0,6 C-6,2 -6,-6 0,-14 Z" />
           </g>
-          <!-- lubber line -->
-          <line class="rose__lubber" x1="150" y1="14" x2="150" y2="34" />
         </svg>
-        <div class="readout">
-          <div id="heading" class="heading">---</div>
-          <div class="heading__unit">°M</div>
-        </div>
+      </div>
+
+      <div class="readout">
+        <span id="heading" class="heading">---</span><span class="heading__unit">°<span class="heading__m">M</span></span>
       </div>
 
       <!-- rudder angle bar -->

@@ -60,32 +60,50 @@ body {
 
 .banner {
   align-self: stretch;
-  text-align: center;
-  font-weight: 800; letter-spacing: .14em; font-size: 15px;
-  padding: 8px; border-radius: 10px;
-  background: var(--panel-2); color: var(--ink-dim);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  font-weight: 800; letter-spacing: .01em; font-size: clamp(18px, 5.4vw, 24px);
+  padding: 6px 12px; border-radius: 10px;
+  background: #000; color: var(--ink-dim);
   border: 1px solid var(--line);
 }
-.banner--standby { color: var(--standby); border-color: color-mix(in srgb, var(--standby) 40%, var(--line)); }
-.banner--engaged { color: var(--engaged-ink); background: var(--engaged); border-color: var(--engaged); }
-.banner--offline { color: #fff; background: var(--offline); border-color: var(--offline); }
-
-/* compass rose */
-.rose-wrap { position: relative; width: min(78vw, 300px); aspect-ratio: 1; }
-.rose { width: 100%; height: 100%; display: block; }
-.rose__ring { fill: none; stroke: var(--line); stroke-width: 2; }
-.rose__lubber { stroke: var(--accent); stroke-width: 3; stroke-linecap: round; }
-.rose__bug polygon { fill: var(--engaged); }
-
-.readout {
-  position: absolute; inset: 0; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; pointer-events: none;
+.banner__text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.banner__lamp {
+  flex: none; width: 22px; height: 22px; border-radius: 50%;
+  border: 3px solid var(--ink-dim); background: transparent;
 }
+.banner--standby { color: var(--standby); }
+.banner--standby .banner__lamp { border-color: var(--standby); }
+.banner--engaged { color: var(--engaged); }
+.banner--engaged .banner__lamp {
+  border-color: var(--engaged); background: var(--engaged);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--engaged) 70%, transparent);
+}
+.banner--offline { color: var(--offline); }
+.banner--offline .banner__lamp { border-color: var(--offline); background: var(--offline); }
+
+/* heading tape (GHC 20 style) */
+.tape-wrap { align-self: stretch; }
+.tape { width: 100%; height: auto; display: block; }
+.tape__tick { stroke: var(--ink-dim); stroke-width: 2; }
+.tape__tick--major { stroke: var(--ink); stroke-width: 2.5; }
+.tape__label { fill: var(--engaged); font-weight: 800; font-size: 22px; font-variant-numeric: tabular-nums; }
+.tape__label--card { font-size: 25px; }
+.tape__hull { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linejoin: round; }
+.tape__drop { fill: var(--standby); }
+.tape__bug { fill: var(--accent); }
+.tape__bug-label { fill: var(--accent); font-weight: 800; font-size: 22px; font-variant-numeric: tabular-nums; }
+
+/* big heading readout */
+.readout { align-self: center; display: flex; align-items: flex-start; justify-content: center; gap: 2px; margin: -2px 0 2px; }
 .heading {
   font-variant-numeric: tabular-nums; font-weight: 800;
-  font-size: clamp(56px, 20vw, 92px); line-height: .9; letter-spacing: .02em;
+  font-size: clamp(84px, 33vw, 148px); line-height: .84; letter-spacing: .01em;
+  color: var(--engaged);
 }
-.heading__unit { color: var(--ink-dim); font-weight: 700; font-size: 15px; margin-top: 4px; }
+.heading__unit { color: var(--engaged); font-weight: 800; font-size: clamp(20px, 6vw, 30px); line-height: 1; margin-top: 8px; }
+.heading__m { display: block; line-height: .9; }
+.app[data-state="standby"] .heading, .app[data-state="standby"] .heading__unit { color: var(--ink); }
+.app[data-state="offline"] .heading, .app[data-state="offline"] .heading__unit { color: var(--offline); }
 
 /* rudder */
 .rudder { align-self: stretch; }

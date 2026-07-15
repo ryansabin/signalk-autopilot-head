@@ -37,12 +37,19 @@
   // ---- DOM ---------------------------------------------------------------
   const $ = (id) => document.getElementById(id)
   const el = {
-    app: $('app'), device: $('deviceName'), conn: $('conn'), banner: $('banner'),
+    app: $('app'), device: $('deviceName'), conn: $('conn'),
+    banner: $('banner'), bannerText: $('bannerText'), engLamp: $('engLamp'),
     heading: $('heading'), target: $('target'), awa: $('awa'), cog: $('cog'), stw: $('stw'),
-    rudderFill: $('rudderFill'), roseRing: $('roseRing'), targetBug: $('targetBug'),
+    rudderFill: $('rudderFill'),
+    tapeTicks: $('tapeTicks'), tapeTarget: $('tapeTarget'), tapeTargetLabel: $('tapeTargetLabel'),
     modeRow: $('modeRow'), actionRow: $('actionRow'),
     overlay: $('overlay'), overlayMsg: $('overlayMsg'), overlayBtn: $('overlayBtn')
   }
+
+  const SVGNS = 'http://www.w3.org/2000/svg'
+  const TAPE_CX = 300              // svg center (viewBox 0..600)
+  const TAPE_PXDEG = 600 / 64      // ~64° window across the tape
+  const TAPE_MIN = 4, TAPE_MAX = 596
 
   // ---- HTTP helpers ------------------------------------------------------
   async function api (path, opts) {
@@ -201,32 +208,24 @@
     const s = state.ap.state
     const engaged = !!state.ap.engaged
     const offline = s === 'off-line'
+    const on = engaged || s === 'auto' // "steering" (engaged in some mode)
 
-    // banner
-    let label = 'STANDBY'
-    let cls = 'banner--standby'
-    if (offline) { label = 'OFF-LINE'; cls = 'banner--offline' }
-    else if (engaged || s === 'auto') { label = (state.ap.mode || 'AUTO').toUpperCase(); cls = 'banner--engaged' }
-    el.banner.textContent = label
+    // banner (GHC-style: mode phrase left, engaged lamp right)
+    let cls = 'banner--standby', text = 'Standby'
+    if (offline) { cls = 'banner--offline'; text = 'No Autopilot' }
+    else if (on) { cls = 'banner--engaged'; text = bannerLabel(state.ap.mode) }
     el.banner.className = 'banner ' + cls
-    el.app.setAttribute('data-state', offline ? 'offline' : (engaged ? 'engaged' : 'standby'))
+    el.bannerText.textContent = text
+    el.app.setAttribute('data-state', offline ? 'offline' : (on ? 'engaged' : 'standby'))
 
-    // heading + rose
+    // heading number
     const hdg = state.nav.heading
     el.heading.textContent = (hdg == null) ? '---' : String(Math.round(norm360(hdg))).padStart(3, '0')
-    if (hdg != null) el.roseRing.setAttribute('transform', 'rotate(' + (-norm360(hdg)) + ' 150 150)')
 
-    // target bug: place relative to heading on the rose (top = current heading)
+    // linear tape + target bug
     const tgtDeg = DEG(state.ap.target)
-    if (tgtDeg != null && hdg != null && (engaged || s === 'auto')) {
-      const rel = norm180(tgtDeg - hdg)
-      el.targetBug.style.display = ''
-      el.targetBug.setAttribute('transform', 'rotate(' + rel + ' 150 150)')
-      el.target.textContent = String(Math.round(norm360(tgtDeg))).padStart(3, '0') + '°'
-    } else {
-      el.targetBug.style.display = 'none'
-      el.target.textContent = '--'
-    }
+    renderTape(hdg, on, tgtDeg)
+    el.target.textContent = (on && tgtDeg != null) ? String(Math.round(norm360(tgtDeg))).padStart(3, '0') + '°' : '--'
 
     // rudder bar: -45..45 deg -> -100..100%
     const r = state.nav.rudder
@@ -244,6 +243,63 @@
     el.stw.textContent = state.nav.stw == null ? '--' : (state.nav.stw * 1.94384).toFixed(1) + ' kn'
 
     renderActions()
+  }
+
+  function bannerLabel (mode) {
+    switch (String(mode)) {
+      case 'compass': return 'Heading Hold'
+      case 'wind': return 'Wind Hold'
+      case 'route': return 'Route'
+      default: return mode ? (mode[0].toUpperCase() + mode.slice(1)) : 'Auto'
+    }
+  }
+
+  function cardinal (d) {
+    const n = norm360(d)
+    const card = { 0: 'N', 90: 'E', 180: 'S', 270: 'W' }
+    if (card[n] !== undefined) return { text: card[n], isCard: true }
+    return { text: String(Math.round(n)).padStart(3, '0'), isCard: false }
+  }
+
+  // Redraw the heading tape: minor ticks every 5°, labelled majors every 15°, centered on the
+  // current heading, with a cyan target bug at the target's position.
+  function renderTape (hdg, showTarget, tgtDeg) {
+    const g = el.tapeTicks
+    g.textContent = ''
+    if (hdg == null) { el.tapeTarget.style.display = 'none'; return }
+
+    const start = Math.ceil((hdg - 34) / 5) * 5
+    for (let d = start; d <= hdg + 34; d += 5) {
+      const x = TAPE_CX + norm180(d - hdg) * TAPE_PXDEG
+      if (x < TAPE_MIN || x > TAPE_MAX) continue
+      const major = ((((d % 15) + 15) % 15) === 0)
+      const line = document.createElementNS(SVGNS, 'line')
+      line.setAttribute('x1', x); line.setAttribute('y1', 22)
+      line.setAttribute('x2', x); line.setAttribute('y2', 22 + (major ? 15 : 8))
+      line.setAttribute('class', 'tape__tick' + (major ? ' tape__tick--major' : ''))
+      g.appendChild(line)
+      if (major) {
+        const c = cardinal(d)
+        const t = document.createElementNS(SVGNS, 'text')
+        t.setAttribute('x', x); t.setAttribute('y', 58); t.setAttribute('text-anchor', 'middle')
+        t.setAttribute('class', 'tape__label' + (c.isCard ? ' tape__label--card' : ''))
+        t.textContent = c.text
+        g.appendChild(t)
+      }
+    }
+
+    if (showTarget && tgtDeg != null) {
+      const x = TAPE_CX + norm180(tgtDeg - hdg) * TAPE_PXDEG
+      if (x >= TAPE_MIN && x <= TAPE_MAX) {
+        el.tapeTarget.style.display = ''
+        el.tapeTarget.setAttribute('transform', 'translate(' + (x - TAPE_CX) + ' 0)')
+        el.tapeTargetLabel.textContent = String(Math.round(norm360(tgtDeg))).padStart(3, '0')
+      } else {
+        el.tapeTarget.style.display = 'none'
+      }
+    } else {
+      el.tapeTarget.style.display = 'none'
+    }
   }
 
   function renderModes () {
