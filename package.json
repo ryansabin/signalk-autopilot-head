@@ -1,0 +1,34 @@
+{
+  "name": "signalk-autopilot-head",
+  "version": "0.1.0",
+  "description": "A modern, device-agnostic autopilot control head webapp for any Signal K v2 autopilot. GHC 20-inspired layout.",
+  "signalk-webapp": true,
+  "signalk": {
+    "displayName": "Pilot",
+    "appIcon": "./icon-72x72.png"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "public",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": [
+    "signalk-webapp",
+    "signalk-category-autopilot",
+    "autopilot",
+    "control-head"
+  ],
+  "author": "Buttercup project",
+  "license": "Apache-2.0",
+  "dependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ryansabin/signalk-autopilot-head.git"
+  }
+}

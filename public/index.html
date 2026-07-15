@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#0b0f14" />
+  <title>Pilot</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app" class="app" data-state="loading">
+
+    <!-- Connection / status ribbon -->
+    <header class="topbar">
+      <span id="deviceName" class="device">—</span>
+      <span id="conn" class="conn" title="connection">connecting…</span>
+    </header>
+
+    <!-- Main display -->
+    <main class="display">
+      <div id="banner" class="banner banner--standby">STANDBY</div>
+
+      <div class="rose-wrap">
+        <svg id="rose" class="rose" viewBox="0 0 300 300" aria-hidden="true">
+          <g id="roseRing">
+            <circle class="rose__ring" cx="150" cy="150" r="132" />
+          </g>
+          <!-- target bug -->
+          <g id="targetBug" class="rose__bug" style="display:none">
+            <polygon points="150,18 143,34 157,34" />
+          </g>
+          <!-- lubber line -->
+          <line class="rose__lubber" x1="150" y1="14" x2="150" y2="34" />
+        </svg>
+        <div class="readout">
+          <div id="heading" class="heading">---</div>
+          <div class="heading__unit">°M</div>
+        </div>
+      </div>
+
+      <!-- rudder angle bar -->
+      <div class="rudder">
+        <div class="rudder__track">
+          <div class="rudder__center"></div>
+          <div id="rudderFill" class="rudder__fill"></div>
+        </div>
+        <div class="rudder__label">RUDDER</div>
+      </div>
+
+      <!-- data strip -->
+      <div class="strip">
+        <div class="strip__cell"><span class="k">TGT</span><span id="target" class="v">--</span></div>
+        <div class="strip__cell"><span class="k">AWA</span><span id="awa" class="v">--</span></div>
+        <div class="strip__cell"><span class="k">COG</span><span id="cog" class="v">--</span></div>
+        <div class="strip__cell"><span class="k">STW</span><span id="stw" class="v">--</span></div>
+      </div>
+    </main>
+
+    <!-- Control zone (Phase 2+ will wire these). Rendered read-only-disabled for now. -->
+    <nav class="controls" aria-label="autopilot controls">
+      <div class="controls__row">
+        <button class="btn btn--standby" data-cmd="standby" disabled>STANDBY</button>
+        <button class="btn btn--auto" data-cmd="auto" disabled>AUTO</button>
+      </div>
+      <div class="controls__row controls__adjust">
+        <button class="btn btn--adj" data-cmd="adjust" data-deg="-10" disabled>−10</button>
+        <button class="btn btn--adj" data-cmd="adjust" data-deg="-1" disabled>−1</button>
+        <button class="btn btn--adj" data-cmd="adjust" data-deg="1" disabled>+1</button>
+        <button class="btn btn--adj" data-cmd="adjust" data-deg="10" disabled>+10</button>
+      </div>
+      <div id="modeRow" class="controls__row controls__modes"></div>
+      <div id="actionRow" class="controls__row controls__actions"></div>
+    </nav>
+
+    <!-- Fallback / error overlay -->
+    <div id="overlay" class="overlay" hidden>
+      <div class="overlay__card">
+        <div id="overlayMsg" class="overlay__msg"></div>
+        <button id="overlayBtn" class="btn" hidden></button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
