@@ -20,6 +20,7 @@
   const POLL_MS = 2000 // REST fallback for autopilot data if no AP deltas arrive
 
   const DEG = (rad) => (rad == null || !isFinite(rad)) ? null : rad * 180 / Math.PI
+  const RAD = (deg) => deg * Math.PI / 180
   const norm360 = (d) => ((d % 360) + 360) % 360
   const norm180 = (d) => { d = ((d % 360) + 360) % 360; return d > 180 ? d - 360 : d }
 
@@ -34,6 +35,8 @@
     lastApDelta: 0
   }
 
+  const inFlight = new Set()
+
   // ---- DOM ---------------------------------------------------------------
   const $ = (id) => document.getElementById(id)
   const el = {
@@ -43,7 +46,9 @@
     rudderFill: $('rudderFill'),
     tapeTicks: $('tapeTicks'), tapeTarget: $('tapeTarget'), tapeTargetLabel: $('tapeTargetLabel'),
     modeRow: $('modeRow'), actionRow: $('actionRow'),
-    overlay: $('overlay'), overlayMsg: $('overlayMsg'), overlayBtn: $('overlayBtn')
+    overlay: $('overlay'), overlayMsg: $('overlayMsg'), overlayBtn: $('overlayBtn'),
+    toast: $('toast'),
+    dlg: $('dlg'), dlgTitle: $('dlgTitle'), dlgBody: $('dlgBody'), dlgBtns: $('dlgBtns')
   }
 
   const SVGNS = 'http://www.w3.org/2000/svg'
@@ -79,6 +84,106 @@
     el.overlay.hidden = false
   }
   function hideOverlay () { el.overlay.hidden = true }
+
+  // ---- command helpers ---------------------------------------------------
+  async function apPut (subpath, body) {
+    return api(AP_BASE + '/' + encodeURIComponent(state.deviceId) + subpath, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body)
+    })
+  }
+
+  let _toastTimer = null
+  function toast (msg) {
+    el.toast.textContent = msg
+    el.toast.hidden = false
+    clearTimeout(_toastTimer)
+    _toastTimer = setTimeout(() => { el.toast.hidden = true }, 3500)
+  }
+
+  function showDlg (title, body, buttons) {
+    return new Promise((resolve) => {
+      let done = false
+      const finish = (v) => { if (!done) { done = true; resolve(v) } }
+      el.dlgTitle.textContent = title
+      el.dlgBody.textContent = body
+      el.dlgBtns.innerHTML = ''
+      for (const { label, value, cls } of buttons) {
+        const b = document.createElement('button')
+        b.className = 'btn ' + (cls || '')
+        b.textContent = label
+        b.onclick = () => { el.dlg.close(); finish(value) }
+        el.dlgBtns.appendChild(b)
+      }
+      el.dlg.onclose = () => finish('cancel')
+      el.dlg.showModal()
+    })
+  }
+
+  async function confirmModal (msg) {
+    const v = await showDlg('Confirm', msg, [
+      { label: 'CANCEL', value: 'cancel', cls: '' },
+      { label: 'OK', value: 'ok', cls: 'btn--auto' }
+    ])
+    return v === 'ok'
+  }
+
+  async function dirModal (title) {
+    const v = await showDlg(title, 'Select direction', [
+      { label: '\u25c4 PORT', value: 'port', cls: 'btn--adj' },
+      { label: 'STBD \u25ba', value: 'stbd', cls: 'btn--adj' },
+      { label: 'CANCEL', value: 'cancel', cls: '' }
+    ])
+    return v === 'cancel' ? null : v
+  }
+
+  async function guardedStandby () {
+    await apPut('/disengage')
+  }
+
+  async function guardedEngage () {
+    if (!await confirmModal('Engage autopilot?')) return
+    await apPut('/engage')
+  }
+
+  async function runAction (id) {
+    if (id === 'tack' || id === 'gybe') {
+      const dir = await dirModal(id.toUpperCase())
+      if (!dir) return
+      await apPut('/' + id + '/' + dir)
+    } else if (id === 'courseCurrentPoint') {
+      if (!await confirmModal('Follow current waypoint?')) return
+      await apPut('/courseCurrentPoint')
+    } else {
+      await apPut('/' + id)
+    }
+  }
+
+  async function handleControlClick (e) {
+    const b = e.target.closest('button[data-cmd]')
+    if (!b || b.disabled) return
+    const key = [b.dataset.cmd, b.dataset.mode, b.dataset.action, b.dataset.deg, b.dataset.dir]
+      .filter(Boolean).join(':')
+    if (inFlight.has(key)) return
+    inFlight.add(key)
+    b.disabled = true
+    try {
+      if (b.dataset.cmd === 'standby')     await guardedStandby()
+      else if (b.dataset.cmd === 'auto')   await guardedEngage()
+      else if (b.dataset.cmd === 'adjust') await apPut('/target/adjust', { value: RAD(Number(b.dataset.deg)) })
+      else if (b.dataset.cmd === 'mode')   await apPut('/mode', { value: b.dataset.mode })
+      else if (b.dataset.cmd === 'dodge') {
+        const msg = 'Dodge ' + (b.dataset.dir === 'port' ? 'to port' : 'to starboard') + '?'
+        if (await confirmModal(msg)) await apPut('/dodge', { value: RAD(b.dataset.dir === 'port' ? -5 : 5) })
+      } else if (b.dataset.cmd === 'action') await runAction(b.dataset.action)
+    } catch (err) {
+      toast(err.message || 'Command failed')
+    } finally {
+      inFlight.delete(key)
+      updateButtonStates()
+    }
+  }
 
   // ---- discovery ---------------------------------------------------------
   async function discover () {
@@ -243,6 +348,7 @@
     el.stw.textContent = state.nav.stw == null ? '--' : (state.nav.stw * 1.94384).toFixed(1) + ' kn'
 
     renderActions()
+    updateButtonStates()
   }
 
   function bannerLabel (mode) {
@@ -302,6 +408,34 @@
     }
   }
 
+  function updateButtonStates () {
+    const hasDevice = !!state.deviceId
+    const offline = state.ap.state === 'off-line'
+    const engaged = !!state.ap.engaged || state.ap.state === 'auto'
+    const ready = hasDevice && !offline
+
+    const btnStandby = document.querySelector('.btn--standby')
+    const btnAuto = document.querySelector('.btn--auto')
+    if (btnStandby) btnStandby.disabled = !ready
+    if (btnAuto) btnAuto.disabled = !ready
+
+    for (const b of document.querySelectorAll('.btn--adj')) {
+      b.disabled = !engaged
+    }
+
+    for (const b of el.modeRow.querySelectorAll('button[data-cmd="mode"]')) {
+      b.disabled = !ready
+      b.classList.toggle('is-active', b.dataset.mode === state.ap.mode)
+    }
+
+    const actionMap = new Map(state.ap.actions.map((a) => [a.id, a]))
+    for (const b of el.actionRow.querySelectorAll('button')) {
+      const id = b.dataset.action || (b.dataset.cmd === 'dodge' ? 'dodge' : null)
+      const action = id ? actionMap.get(id) : null
+      b.disabled = !(action && action.available !== false)
+    }
+  }
+
   function renderModes () {
     el.modeRow.innerHTML = ''
     for (const m of state.options.modes) {
@@ -310,7 +444,6 @@
       b.dataset.cmd = 'mode'
       b.dataset.mode = m
       b.textContent = String(m).toUpperCase()
-      b.disabled = true // Phase 2 wires this
       el.modeRow.appendChild(b)
     }
   }
@@ -322,12 +455,23 @@
     renderActions._sig = sig
     el.actionRow.innerHTML = ''
     for (const a of state.ap.actions) {
+      if (a.id === 'dodge') {
+        for (const dir of ['port', 'stbd']) {
+          const b = document.createElement('button')
+          b.className = 'btn btn--action'
+          b.dataset.cmd = 'dodge'
+          b.dataset.dir = dir
+          b.textContent = dir === 'port' ? '\u25c4 DODGE' : 'DODGE \u25ba'
+          if (!a.available) b.classList.add('is-unavailable')
+          el.actionRow.appendChild(b)
+        }
+        continue
+      }
       const b = document.createElement('button')
       b.className = 'btn btn--action'
       b.dataset.cmd = 'action'
       b.dataset.action = a.id
       b.textContent = a.name || a.id
-      b.disabled = true // Phase 2 wires + respects a.available
       if (!a.available) b.classList.add('is-unavailable')
       el.actionRow.appendChild(b)
     }
@@ -344,6 +488,7 @@
   // ---- boot --------------------------------------------------------------
   async function boot () {
     setConn('connecting')
+    document.querySelector('.controls').addEventListener('click', handleControlClick)
     try {
       await discover()
       hideOverlay()
@@ -359,5 +504,5 @@
   document.addEventListener('DOMContentLoaded', boot)
 
   // Expose a little surface for tests / debugging.
-  window.__pilot = { state, DEG, norm180, norm360, normalizeDeviceIds }
+  window.__pilot = { state, DEG, RAD, norm180, norm360, normalizeDeviceIds, apPut, inFlight }
 })()
