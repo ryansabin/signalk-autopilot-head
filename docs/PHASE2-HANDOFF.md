@@ -1,5 +1,10 @@
 # Phase 2 Handoff — wire the command buttons
 
+> Historical implementation plan. Command wiring is now implemented. The corrected v2 command
+> methods are documented below; REST actions come from `options.actions`, and live
+> `steering.autopilot.availableActions` contains available action IDs. See `test/commands.test.js`
+> for executable coverage of commands, availability, dialogs and request lockout.
+
 **For:** Claude Code (or any dev) picking up `signalk-autopilot-head`.
 **Goal of Phase 2:** make the already-rendered control buttons actually drive the autopilot through
 the Signal K **v2 Autopilot API**, generically (no provider-specific hardcoding), with safety guards.
@@ -99,18 +104,19 @@ Base: `/signalk/v2/api/vessels/self/autopilots/{deviceId}`
 
 | Button | Method + subpath | Body | Notes |
 |---|---|---|---|
-| AUTO | `PUT /engage` | — | or `PUT /state {value:'auto'}` |
-| STANDBY | `PUT /disengage` | — | or `PUT /state {value:'standby'}` |
+| AUTO | `POST /engage` | — | or `PUT /state {value:'auto'}` |
+| STANDBY | `POST /disengage` | — | or `PUT /state {value:'standby'}` |
 | mode | `PUT /mode` | `{value:'<mode>'}` | mode string from `options.modes` |
 | −10/−1/+1/+10 | `PUT /target/adjust` | `{value:<radians>}` | **value is RADIANS** — convert from deg |
-| tack | `PUT /tack/port` \| `/tack/starboard` | — | action id `tack` |
-| gybe | `PUT /gybe/port` \| `/gybe/starboard` | — | action id `gybe` |
+| tack | `POST /tack/port` \| `/tack/starboard` | — | action id `tack` |
+| gybe | `POST /gybe/port` \| `/gybe/starboard` | — | action id `gybe` |
 | dodge | `PUT /dodge` | `{value:<radians>}` | quantized nudge; provider decides step |
-| follow waypoint | `PUT /courseCurrentPoint` | — | action id `courseCurrentPoint` |
+| follow waypoint | `POST /courseCurrentPoint` | — | action id `courseCurrentPoint` |
+| next waypoint | `POST /courseNextPoint` | — | only when advertised and available |
 
-Do **not** wire `setTarget` (absolute) or `courseNextPoint` — both are throwing stubs on the Garmin
-provider (no absolute-heading PGN; plotter advances waypoints). If a future provider supports them,
-gate on a successful probe, not a hardcode.
+Absolute target entry is not exposed. Course actions are driven by each provider's advertised
+availability, including `courseNextPoint`; providers with unsupported operations should omit or
+disable those actions.
 
 > The Garmin provider's method surface is in `signalk-autopilot-provider-garmin/index.js`
 > (`engage`, `disengage`, `setState`, `setMode`, `adjustTarget`, `tack(dir)`, `gybe(dir)`,
@@ -123,7 +129,7 @@ gate on a successful probe, not a hardcode.
   button or a quick inline chooser) rather than guessing. The provider auto-picks the *geometrically*
   correct turn from wind, but the API path still takes a direction.
 - `dodge` needs a magnitude and a side; simplest: two dodge buttons (port/stbd) sending a fixed step.
-- `courseCurrentPoint` is a plain PUT.
+- `courseCurrentPoint` is a plain POST.
 
 ### 5. Enable / disable logic (drive from server, not assumptions)
 - Enable AUTO/STANDBY/mode when `state.deviceId` is set and not `off-line`.
@@ -154,7 +160,7 @@ Extend `test/scaffold.test.js` (or add `test/commands.test.js`) — keep it depe
 (`node --test`), since there's no DOM in CI:
 - Assert the command map exists and uses `/target/adjust`, `/engage`, `/disengage`, `/mode`,
   `/tack/`, `/gybe/`, `/dodge`, `/courseCurrentPoint`.
-- Assert `setTarget`/`courseNextPoint` are **not** wired.
+- Assert absolute target entry is not wired and advertised course actions use POST.
 - Unit-test any pure helper you add (e.g. `RAD`, a `degToRadStep` map) by exporting it on
   `window.__pilot` and/or factoring pure logic into a testable form.
 - `node --check public/app.js` (already a test) must stay green.
@@ -165,7 +171,7 @@ tack/gybe each direction; dodge; standby disengages. Verify the tape target bug 
 GHC head if you also press buttons on the physical GHC.
 
 ## Definition of done
-- All buttons issue the correct v2 PUTs; disabled/available states reflect live server data.
+- All buttons issue the correct v2 POSTs/PUTs; disabled/available states reflect live server data.
 - Confirm guards on move commands; standby instant; in-flight lockout; off-line lockout.
 - Tests green on Mac and Pi; `node --check` clean.
 - No provider-specific hardcoding beyond gracefully hiding unsupported ops.

@@ -3,12 +3,11 @@
 /*
  * signalk-autopilot-head — a device-agnostic control head for any Signal K v2 autopilot.
  *
- * Phase 1: discovery + live read-only display.
+ * Discovery, live display and commands through the v2 Autopilot API.
  *   - Discovers the server's autopilot device(s) via the v2 Autopilot API.
  *   - Renders state / mode / engaged / target and the vessel heading, rudder, wind, COG, STW live
  *     over the Signal K delta WebSocket.
- *   - Builds the mode + action buttons from what the provider advertises (options / actions), but
- *     leaves them disabled — command wiring lands in Phase 2.
+ *   - Builds mode + action buttons from the provider's advertised options and availability.
  *
  * No build step, no framework, no dependencies. Works against any Signal K server >= 2.x.
  */
@@ -86,13 +85,16 @@
   function hideOverlay () { el.overlay.hidden = true }
 
   // ---- command helpers ---------------------------------------------------
-  async function apPut (subpath, body) {
+  async function apRequest (method, subpath, body) {
     return api(AP_BASE + '/' + encodeURIComponent(state.deviceId) + subpath, {
-      method: 'PUT',
+      method,
       headers: { 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body)
     })
   }
+
+  async function apPut (subpath, body) { return apRequest('PUT', subpath, body) }
+  async function apPost (subpath) { return apRequest('POST', subpath) }
 
   let _toastTimer = null
   function toast (msg) {
@@ -132,39 +134,43 @@
   async function dirModal (title) {
     const v = await showDlg(title, 'Select direction', [
       { label: '\u25c4 PORT', value: 'port', cls: 'btn--adj' },
-      { label: 'STBD \u25ba', value: 'stbd', cls: 'btn--adj' },
+      { label: 'STBD \u25ba', value: 'starboard', cls: 'btn--adj' },
       { label: 'CANCEL', value: 'cancel', cls: '' }
     ])
     return v === 'cancel' ? null : v
   }
 
   async function guardedStandby () {
-    await apPut('/disengage')
+    await apPost('/disengage')
   }
 
   async function guardedEngage () {
     if (!await confirmModal('Engage autopilot?')) return
-    await apPut('/engage')
+    await apPost('/engage')
   }
 
   async function runAction (id) {
     if (id === 'tack' || id === 'gybe') {
       const dir = await dirModal(id.toUpperCase())
       if (!dir) return
-      await apPut('/' + id + '/' + dir)
+      await apPost('/' + id + '/' + dir)
     } else if (id === 'courseCurrentPoint') {
       if (!await confirmModal('Follow current waypoint?')) return
-      await apPut('/courseCurrentPoint')
+      await apPost('/courseCurrentPoint')
     } else {
-      await apPut('/' + id)
+      await apPost('/' + id)
     }
+  }
+
+  function controlKey (b) {
+    return [b.dataset.cmd, b.dataset.mode, b.dataset.action, b.dataset.deg, b.dataset.dir]
+      .filter(Boolean).join(':')
   }
 
   async function handleControlClick (e) {
     const b = e.target.closest('button[data-cmd]')
     if (!b || b.disabled) return
-    const key = [b.dataset.cmd, b.dataset.mode, b.dataset.action, b.dataset.deg, b.dataset.dir]
-      .filter(Boolean).join(':')
+    const key = controlKey(b)
     if (inFlight.has(key)) return
     inFlight.add(key)
     b.disabled = true
@@ -177,6 +183,7 @@
         const msg = 'Dodge ' + (b.dataset.dir === 'port' ? 'to port' : 'to starboard') + '?'
         if (await confirmModal(msg)) await apPut('/dodge', { value: RAD(b.dataset.dir === 'port' ? -5 : 5) })
       } else if (b.dataset.cmd === 'action') await runAction(b.dataset.action)
+      await refreshAp()
     } catch (err) {
       toast(err.message || 'Command failed')
     } finally {
@@ -240,7 +247,8 @@
     if ('mode' in d) state.ap.mode = d.mode
     if ('engaged' in d) state.ap.engaged = d.engaged
     if ('target' in d) state.ap.target = d.target
-    if (Array.isArray(d.actions)) state.ap.actions = d.actions
+    const actions = d.options?.actions ?? d.actions
+    if (Array.isArray(actions)) state.ap.actions = actions
     render()
   }
 
@@ -294,6 +302,11 @@
       case 'steering.autopilot.state': state.ap.state = value; markAp(); break
       case 'steering.autopilot.mode': state.ap.mode = value; markAp(); break
       case 'steering.autopilot.engaged': state.ap.engaged = value; markAp(); break
+      case 'steering.autopilot.availableActions':
+        if (Array.isArray(value)) {
+          state.ap.actions = state.ap.actions.map((a) => ({ ...a, available: value.includes(a.id) }))
+        }
+        markAp(); break
       case 'steering.autopilot.target':
       case 'steering.autopilot.targetHeadingMagnetic':
       case 'steering.autopilot.targetWindAngleApparent':
@@ -414,17 +427,19 @@
     const engaged = !!state.ap.engaged || state.ap.state === 'auto'
     const ready = hasDevice && !offline
 
-    const btnStandby = document.querySelector('.btn--standby')
-    const btnAuto = document.querySelector('.btn--auto')
-    if (btnStandby) btnStandby.disabled = !ready
-    if (btnAuto) btnAuto.disabled = !ready
+    const controls = document.querySelector('.controls')
+    const btnStandby = controls.querySelector('[data-cmd="standby"]')
+    const btnAuto = controls.querySelector('[data-cmd="auto"]')
+    const busy = (b) => inFlight.has(controlKey(b))
+    if (btnStandby) btnStandby.disabled = !ready || busy(btnStandby)
+    if (btnAuto) btnAuto.disabled = !ready || busy(btnAuto)
 
-    for (const b of document.querySelectorAll('.btn--adj')) {
-      b.disabled = !engaged
+    for (const b of controls.querySelectorAll('[data-cmd="adjust"]')) {
+      b.disabled = !ready || !engaged || busy(b)
     }
 
     for (const b of el.modeRow.querySelectorAll('button[data-cmd="mode"]')) {
-      b.disabled = !ready
+      b.disabled = !ready || busy(b)
       b.classList.toggle('is-active', b.dataset.mode === state.ap.mode)
     }
 
@@ -432,7 +447,7 @@
     for (const b of el.actionRow.querySelectorAll('button')) {
       const id = b.dataset.action || (b.dataset.cmd === 'dodge' ? 'dodge' : null)
       const action = id ? actionMap.get(id) : null
-      b.disabled = !(action && action.available !== false)
+      b.disabled = !ready || !action?.available || busy(b)
     }
   }
 
@@ -446,6 +461,7 @@
       b.textContent = String(m).toUpperCase()
       el.modeRow.appendChild(b)
     }
+    updateButtonStates()
   }
 
   function renderActions () {
@@ -456,7 +472,7 @@
     el.actionRow.innerHTML = ''
     for (const a of state.ap.actions) {
       if (a.id === 'dodge') {
-        for (const dir of ['port', 'stbd']) {
+        for (const dir of ['port', 'starboard']) {
           const b = document.createElement('button')
           b.className = 'btn btn--action'
           b.dataset.cmd = 'dodge'
