@@ -24,6 +24,15 @@
   const norm360 = (d) => ((d % 360) + 360) % 360
   const norm180 = (d) => { d = ((d % 360) + 360) % 360; return d > 180 ? d - 360 : d }
 
+  function targetLabel (deg, mode) {
+    if (['wind', 'windApparent', 'windTrue'].includes(mode)) {
+      let angle = Math.round(norm180(deg))
+      if (angle === 180 && deg < 0) angle = -180
+      return (angle > 0 ? '+' : '') + angle
+    }
+    return String(Math.round(norm360(deg)) % 360).padStart(3, '0')
+  }
+
   // ---- app state ---------------------------------------------------------
   const state = {
     deviceId: null,
@@ -330,7 +339,7 @@
     // linear tape + target bug
     const tgtDeg = DEG(state.ap.target)
     renderTape(hdg, on, tgtDeg)
-    el.target.textContent = (on && tgtDeg != null) ? String(Math.round(norm360(tgtDeg))).padStart(3, '0') + '°' : '--'
+    el.target.textContent = (on && tgtDeg != null) ? targetLabel(tgtDeg, state.ap.mode) + '°' : '--'
 
     // rudder bar: -45..45 deg -> -100..100%
     const r = state.nav.rudder
@@ -399,7 +408,7 @@
       if (x >= TAPE_MIN && x <= TAPE_MAX) {
         el.tapeTarget.style.display = ''
         el.tapeTarget.setAttribute('transform', 'translate(' + (x - TAPE_CX) + ' 0)')
-        el.tapeTargetLabel.textContent = String(Math.round(norm360(tgtDeg))).padStart(3, '0')
+        el.tapeTargetLabel.textContent = targetLabel(tgtDeg, state.ap.mode)
       } else {
         el.tapeTarget.style.display = 'none'
       }
